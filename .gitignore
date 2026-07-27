@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Distribution
+build/
+dist/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# SQLite Database
+*.db
+*.sqlite3
+
+# Project Data
+projects/
+
+# Generated Certificates
+output/
+
+# Temporary Files
+*.tmp
+*.bak
+*.swp
+
+# Python Environment
+.python-version
+
+# PyInstaller
+*.spec
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/

@@ -1,0 +1,4 @@
+ttkbootstrap
+Pillow
+openpyxl
+pypdf
