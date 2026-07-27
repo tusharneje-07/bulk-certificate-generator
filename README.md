@@ -25,12 +25,6 @@ A professional desktop application for designing and generating personalized PDF
 
 ---
 
-## Screenshots
-
-Add screenshots here.
-
----
-
 ## Requirements
 
 - Python 3.10 or newer
@@ -126,6 +120,4 @@ This project is licensed under the MIT License.
 
 ---
 
-## Author
-
-Developed by **Aptronix / Your Name**
+> Designed & Developed by [@tusharneje-07](https://github.com/tusharneje-07/) with ❤️ and Claude.
