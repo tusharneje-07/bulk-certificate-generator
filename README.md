@@ -1,6 +1,6 @@
 # Bulk Certificate Generator
 
-A professional desktop application for designing and generating personalized PDF certificates in bulk from Excel spreadsheets.
+A professional desktop application for designing, previewing, and generating personalized PDF certificates in bulk from Excel spreadsheets.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -12,22 +12,24 @@ A professional desktop application for designing and generating personalized PDF
 
 - Modern dark-themed user interface
 - Project-based workflow
-- Live certificate preview
-- Draw and resize text boxes visually
-- Multiple configurable text fields
-- Excel placeholder support (`{name}`, `{course}`, etc.)
-- Custom fonts and colors
-- PDF metadata support
-- Batch PDF certificate generation
-- Automatic project saving
-- Multi-threaded generation
-- Progress tracking and logging
+- Interactive live certificate preview
+- Visual drag-and-drop text box editor
+- Draw, move, and resize text boxes directly on the certificate
+- Multiple independently configurable text fields
+- Excel variable placeholders (`{name}`, `{course}`, `{certificate_number}`, etc.)
+- Custom fonts, colors, sizes, and text alignment
+- PDF metadata customization
+- Automatic project management
+- Multi-threaded batch PDF certificate generation
+- Progress tracking with detailed logs
+- SQLite-backed project database
+- Cross-platform support (Windows, Linux, and macOS)
 
 ---
 
 ## Requirements
 
-- Python 3.10 or newer
+- Python **3.10** or later
 
 ---
 
@@ -36,34 +38,8 @@ A professional desktop application for designing and generating personalized PDF
 Clone the repository.
 
 ```bash
-git clone https://github.com/<your-username>/bulk-certificate-generator.git
+git clone https://github.com/tusharneje-07/bulk-certificate-generator.git
 cd bulk-certificate-generator
-```
-
-Create a virtual environment.
-
-```bash
-python -m venv venv
-```
-
-Activate it.
-
-### Linux / macOS
-
-```bash
-source venv/bin/activate
-```
-
-### Windows
-
-```cmd
-venv\Scripts\activate
-```
-
-Install dependencies.
-
-```bash
-pip install -r requirements.txt
 ```
 
 ---
@@ -73,15 +49,38 @@ pip install -r requirements.txt
 ### Linux
 
 ```bash
-chmod +x run.sh
-./run.sh
+chmod +x linux_run.sh
+./linux_run.sh
 ```
 
-### Windows
+### macOS
+
+```bash
+chmod +x mac_run.sh
+./mac_run.sh
+```
+
+### Windows (Batch)
 
 ```cmd
-python main.py
+windows_run.bat
 ```
+
+### Windows (PowerShell)
+
+```powershell
+.\windows_run.ps1
+```
+
+The launcher will automatically:
+
+- Create a virtual environment (if needed)
+- Upgrade `pip`
+- Detect missing Python packages
+- Install only the required dependencies
+- Launch the application
+
+No manual dependency installation is required.
 
 ---
 
@@ -90,14 +89,16 @@ python main.py
 ```text
 bulk-certificate-generator/
 ├── main.py
-├── run.sh
+├── linux_run.sh
+├── mac_run.sh
+├── windows_run.bat
+├── windows_run.ps1
 ├── requirements.txt
 ├── README.md
 ├── LICENSE
 ├── .gitignore
 ├── assets/
 ├── projects/
-└── screenshots/
 ```
 
 ---
@@ -116,8 +117,9 @@ bulk-certificate-generator/
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the **MIT License**.
 
 ---
 
-> Designed & Developed by [@tusharneje-07](https://github.com/tusharneje-07/) with ❤️ and Claude.
+
+> Made with ❤️ by [@tusharneje-07](https://github.com/tusharneje-07/) and Claude
