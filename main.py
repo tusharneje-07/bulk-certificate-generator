@@ -502,7 +502,6 @@ class ProjectNameDialog(tk.Toplevel):
         self.configure(bg=COLORS["surface"])
         self.resizable(False, False)
         self.transient(parent.winfo_toplevel())
-        self.grab_set()
         shell = tk.Frame(self, bg=COLORS["surface"], padx=26, pady=24)
         shell.pack(fill="both", expand=True)
         tk.Label(shell, text="Create a new project", bg=COLORS["surface"], fg=COLORS["text"],
@@ -523,7 +522,12 @@ class ProjectNameDialog(tk.Toplevel):
         x = parent.winfo_toplevel().winfo_rootx() + (parent.winfo_toplevel().winfo_width() - self.winfo_width()) // 2
         y = parent.winfo_toplevel().winfo_rooty() + (parent.winfo_toplevel().winfo_height() - self.winfo_height()) // 2
         self.geometry(f"360x210+{x}+{y}")
-        self.after(60, self.entry.focus_set)
+        # X11/Wayland cannot grab a window until the window manager has
+        # mapped it. Windows usually tolerates an earlier grab, which hid
+        # this ordering bug during development.
+        self.wait_visibility()
+        self.grab_set()
+        self.entry.focus_set()
 
     def _submit(self):
         value = self.entry.get().strip()
