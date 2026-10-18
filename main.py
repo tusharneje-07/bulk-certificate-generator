@@ -497,6 +497,8 @@ class ProjectNameDialog(tk.Toplevel):
 
     def __init__(self, parent):
         super().__init__(parent)
+        self.withdraw()
+        self._modal_after = None
         self.result = None
         self.title("New project")
         self.configure(bg=COLORS["surface"])
@@ -528,12 +530,31 @@ class ProjectNameDialog(tk.Toplevel):
         x = owner.winfo_rootx() + (owner.winfo_width() - width) // 2
         y = owner.winfo_rooty() + (owner.winfo_height() - height) // 2
         self.geometry(f"{width}x{height}+{x}+{y}")
-        # X11/Wayland cannot grab a window until the window manager has
-        # mapped it. Windows usually tolerates an earlier grab, which hid
-        # this ordering bug during development.
-        self.wait_visibility()
-        self.grab_set()
+        # Finish construction before mapping. Let the normal event loop paint
+        # the dialog; visibility notifications and grab readiness can differ
+        # between window managers, so do not block construction on either.
+        self.deiconify()
+        self._modal_after = self.after_idle(self._activate_modal)
+
+    def _activate_modal(self):
+        self._modal_after = None
+        if not self.winfo_viewable():
+            self._modal_after = self.after(50, self._activate_modal)
+            return
+        try:
+            self.grab_set()
+        except tk.TclError as exc:
+            if "window not viewable" not in str(exc):
+                raise
+            self._modal_after = self.after(50, self._activate_modal)
+            return
         self.entry.focus_set()
+
+    def destroy(self):
+        if self._modal_after is not None:
+            self.after_cancel(self._modal_after)
+            self._modal_after = None
+        super().destroy()
 
     def _submit(self):
         value = self.entry.get().strip()
