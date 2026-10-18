@@ -48,6 +48,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, colorchooser
 
 import ttkbootstrap as tb
@@ -86,6 +87,47 @@ METADATA_STANDARD_FIELDS = [
     ("creator", "Creator"),
     ("producer", "Producer"),
 ]
+
+COLORS = {
+    "bg": "#191919",
+    "sidebar": "#202020",
+    "surface": "#242424",
+    "surface_2": "#2b2b2b",
+    "surface_hover": "#303030",
+    "border": "#383838",
+    "text": "#f1f1ef",
+    "muted": "#9b9b98",
+    "accent": "#f1f1ef",
+    "accent_hover": "#ffffff",
+    "selection": "#414141",
+}
+
+UI_FONT = "Segoe UI"
+DISPLAY_FONT = "Segoe UI"
+
+
+def studio_mark(size):
+    """Minimal folded-sheet monogram with a clear silhouette at icon sizes."""
+    scale = 8
+    image = Image.new("RGBA", (size * scale, size * scale))
+    draw = ImageDraw.Draw(image)
+    def polygon(points, fill):
+        draw.polygon([(round(x * size * scale), round(y * size * scale))
+                      for x, y in points], fill=fill)
+
+    # One open, architectural C. The separated fold adds depth without tiny
+    # decorative details, outlines, lettering, or a surrounding app tile.
+    polygon(((.18, .12), (.62, .12), (.62, .31), (.37, .31),
+             (.37, .69), (.82, .69), (.82, .88), (.18, .88)), "#f1f1ef")
+    polygon(((.68, .12), (.86, .31), (.68, .31)), "#a6a6a4")
+    return image.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def display_project_date(value):
+    try:
+        return datetime.fromisoformat(value).strftime("%d %b %Y  ·  %H:%M")
+    except (ValueError, TypeError):
+        return str(value or "—")
 
 
 # ============================================================================ #
@@ -367,12 +409,135 @@ def copy_asset_into(project_folder, src_path, subfolder, desired_stem=None):
 # Small reusable widgets
 # ============================================================================ #
 
+class RoundedButton(tk.Canvas):
+    """Canvas-backed button with genuinely rounded edges and quiet hover states."""
+
+    def __init__(self, master, text, command=None, kind="secondary", width=None, height=38, **kwargs):
+        self.command = command
+        self.kind = kind
+        self._state = kwargs.pop("state", "normal")
+        self._font = kwargs.pop("font", (UI_FONT, 10))
+        canvas_bg = kwargs.pop("canvas_bg", self._parent_bg(master))
+        self._text = text
+        measured = tkfont.Font(font=self._font).measure(text)
+        self._button_width = width or max(82, measured + 34)
+        self._button_height = height
+        super().__init__(
+            master, width=self._button_width, height=height, highlightthickness=0,
+            borderwidth=0, relief="flat", bg=canvas_bg, cursor="hand2",
+        )
+        self.bind("<Enter>", lambda _e: self._draw(True))
+        self.bind("<Leave>", lambda _e: self._draw(False))
+        self.bind("<Button-1>", self._click)
+        self.bind("<Configure>", self._resize)
+        self.configure(takefocus=True)
+        self.bind("<Return>", self._click)
+        self.bind("<space>", self._click)
+        self.bind("<FocusIn>", lambda _e: self._draw(True))
+        self.bind("<FocusOut>", lambda _e: self._draw(False))
+        self._draw(False)
+
+    def _resize(self, event):
+        self._button_width, self._button_height = event.width, event.height
+        self._draw(False)
+
+    @staticmethod
+    def _parent_bg(master):
+        try:
+            return master.cget("background")
+        except Exception:
+            style = master.cget("style") or "TFrame"
+            return tb.Style().lookup(style, "background") or COLORS["sidebar"]
+
+    def _palette(self, hovered=False):
+        if self._state == "disabled":
+            return "#303030", "#737373", "#383838"
+        if self.kind == "primary":
+            return ("#ffffff" if hovered else "#f1f1ef"), "#171717", "#f1f1ef"
+        if self.kind == "danger":
+            return ("#36292b" if hovered else "#292526"), "#df9a9f", "#493438"
+        return (COLORS["surface_hover"] if hovered else COLORS["surface"]), COLORS["text"], COLORS["border"]
+
+    def _rounded_rect(self, x1, y1, x2, y2, radius, **options):
+        points = [
+            x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
+            x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
+            x1, y2, x1, y2 - radius, x1, y1 + radius, x1, y1,
+        ]
+        return self.create_polygon(points, smooth=True, splinesteps=24, **options)
+
+    def _draw(self, hovered):
+        self.delete("all")
+        fill, text_color, outline = self._palette(hovered)
+        self._rounded_rect(1, 1, self._button_width - 1, self._button_height - 1, 9,
+                           fill=fill, outline=outline, width=1)
+        self.create_text(self._button_width / 2, self._button_height / 2,
+                         text=self._text, fill=text_color, font=self._font)
+
+    def _click(self, _event):
+        if self._state != "disabled" and self.command:
+            self.command()
+
+    def configure(self, cnf=None, **kwargs):
+        if cnf:
+            kwargs.update(cnf)
+        if "state" in kwargs:
+            self._state = kwargs.pop("state")
+        if "text" in kwargs:
+            self._text = kwargs.pop("text")
+        if kwargs:
+            super().configure(**kwargs)
+        self._draw(False)
+
+    config = configure
+
+
+class ProjectNameDialog(tk.Toplevel):
+    """Small first-party dialog instead of the generic ttkbootstrap prompt."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.result = None
+        self.title("New project")
+        self.configure(bg=COLORS["surface"])
+        self.resizable(False, False)
+        self.transient(parent.winfo_toplevel())
+        self.grab_set()
+        shell = tk.Frame(self, bg=COLORS["surface"], padx=26, pady=24)
+        shell.pack(fill="both", expand=True)
+        tk.Label(shell, text="Create a new project", bg=COLORS["surface"], fg=COLORS["text"],
+                 font=(DISPLAY_FONT, 15, "bold")).pack(anchor="w")
+        tk.Label(shell, text="Give this certificate workspace a name.", bg=COLORS["surface"], fg=COLORS["muted"],
+                 font=(UI_FONT, 10)).pack(anchor="w", pady=(5, 18))
+        self.entry = tk.Entry(shell, bg=COLORS["surface_2"], fg=COLORS["text"], insertbackground=COLORS["text"],
+                              relief="flat", highlightthickness=1, highlightbackground=COLORS["border"],
+                              highlightcolor="#707070", font=(UI_FONT, 11))
+        self.entry.pack(fill="x", ipady=9)
+        actions = tk.Frame(shell, bg=COLORS["surface"])
+        actions.pack(fill="x", pady=(22, 0))
+        RoundedButton(actions, "Create project", self._submit, kind="primary", width=132).pack(side="right")
+        RoundedButton(actions, "Cancel", self.destroy, width=84).pack(side="right", padx=(0, 9))
+        self.entry.bind("<Return>", lambda _e: self._submit())
+        self.bind("<Escape>", lambda _e: self.destroy())
+        self.update_idletasks()
+        x = parent.winfo_toplevel().winfo_rootx() + (parent.winfo_toplevel().winfo_width() - self.winfo_width()) // 2
+        y = parent.winfo_toplevel().winfo_rooty() + (parent.winfo_toplevel().winfo_height() - self.winfo_height()) // 2
+        self.geometry(f"360x210+{x}+{y}")
+        self.after(60, self.entry.focus_set)
+
+    def _submit(self):
+        value = self.entry.get().strip()
+        if value:
+            self.result = value
+            self.destroy()
+
+
 class ScrollableFrame(tb.Frame):
     """A Frame with a vertical scrollbar for the left-hand control panel."""
 
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
-        self.canvas = tk.Canvas(self, highlightthickness=0, bd=0)
+        self.canvas = tk.Canvas(self, highlightthickness=0, bd=0, bg=COLORS["sidebar"])
         self.vbar = tb.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.inner = tb.Frame(self.canvas)
 
@@ -420,8 +585,8 @@ class Collapsible(tb.Frame):
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(1, weight=1)
 
-        self.toggle_btn = tb.Button(
-            header, text=self._arrow(), width=3, bootstyle="secondary-link", command=self.toggle
+        self.toggle_btn = RoundedButton(
+            header, text=self._arrow(), width=32, height=30, command=self.toggle
         )
         self.toggle_btn.grid(row=0, column=0)
         tb.Label(header, text=title, bootstyle=SECONDARY).grid(row=0, column=1, sticky="w")
@@ -482,20 +647,20 @@ class InteractiveCanvasPreview(tb.Frame):
 
     # -- construction ----------------------------------------------------
     def _build_ui(self):
-        toolbar = tb.Frame(self, padding=(4, 4))
+        toolbar = tb.Frame(self, padding=(0, 8), style="App.TFrame")
         toolbar.grid(row=0, column=0, columnspan=2, sticky="ew")
-        tb.Button(toolbar, text="−", width=3, bootstyle="secondary-outline", command=self.zoom_out).pack(side="left")
-        self.zoom_label = tb.Label(toolbar, text="100%", width=6, anchor="center")
+        RoundedButton(toolbar, text="−", width=34, command=self.zoom_out).pack(side="left")
+        self.zoom_label = tb.Label(toolbar, text="100%", width=6, anchor="center", style="Muted.TLabel")
         self.zoom_label.pack(side="left", padx=4)
-        tb.Button(toolbar, text="+", width=3, bootstyle="secondary-outline", command=self.zoom_in).pack(side="left")
-        tb.Button(toolbar, text="Fit", bootstyle="secondary-outline", command=self.fit).pack(side="left", padx=(8, 0))
-        tb.Button(toolbar, text="100%", bootstyle="secondary-outline", command=self.reset_zoom).pack(side="left", padx=(4, 0))
+        RoundedButton(toolbar, text="+", width=34, command=self.zoom_in).pack(side="left")
+        RoundedButton(toolbar, text="Fit", command=self.fit).pack(side="left", padx=(8, 0))
+        RoundedButton(toolbar, text="100%", command=self.reset_zoom).pack(side="left", padx=(4, 0))
         tb.Label(
-            toolbar, text="   Draw a box to add a text field · drag to move · drag corner to resize",
-            bootstyle=SECONDARY,
-        ).pack(side="left", padx=(12, 0))
+            toolbar, text="Certificate preview", style="Muted.TLabel",
+        ).pack(side="right", padx=(12, 0))
 
-        self.canvas = tk.Canvas(self, bg="#242424", highlightthickness=0, bd=0)
+        self.canvas = tk.Canvas(self, bg="#171717", highlightthickness=1,
+                                highlightbackground=COLORS["border"], bd=0)
         self.vbar = tb.Scrollbar(self, orient="vertical", command=self.canvas.yview)
         self.hbar = tb.Scrollbar(self, orient="horizontal", command=self.canvas.xview)
         self.canvas.configure(yscrollcommand=self.vbar.set, xscrollcommand=self.hbar.set)
@@ -731,72 +896,103 @@ class InteractiveCanvasPreview(tb.Frame):
 
 class LauncherFrame(tb.Frame):
     def __init__(self, master, app):
-        super().__init__(master, padding=30)
+        super().__init__(master, style="App.TFrame")
         self.app = app
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        tb.Label(self, text="Certificate Generator Studio", font=("Segoe UI", 22, "bold"), bootstyle=INFO).grid(
-            row=0, column=0, sticky="w"
-        )
+        rail = tb.Frame(self, padding=(28, 30), style="Sidebar.TFrame", width=292)
+        rail.grid(row=0, column=0, sticky="nsew")
+        rail.grid_propagate(False)
+        brand = tb.Frame(rail, style="Sidebar.TFrame")
+        brand.pack(fill="x", pady=(0, 38))
+        self.brand_mark = ImageTk.PhotoImage(studio_mark(34))
+        tb.Label(brand, image=self.brand_mark, style="Brand.TLabel").pack(side="left", padx=(0, 10))
+        tb.Label(brand, text="Certificate\nStudio", style="Brand.TLabel").pack(side="left")
+        tb.Label(rail, text="Create certificates", style="Section.TLabel").pack(anchor="w")
         tb.Label(
-            self, text="Create template-based PDF certificates in bulk from an Excel roster.",
-            bootstyle=SECONDARY,
-        ).grid(row=1, column=0, sticky="w", pady=(2, 20))
+            rail, text="Design and generate polished PDF certificates from a spreadsheet.",
+            style="MutedSidebar.TLabel", wraplength=220, justify="left",
+        ).pack(anchor="w", pady=(8, 22))
+        RoundedButton(
+            rail, "+  New project", self._start_new, kind="primary", width=234,
+            height=42, canvas_bg=COLORS["sidebar"],
+        ).pack(fill="x")
+        tb.Frame(rail, style="Sidebar.TFrame").pack(fill="both", expand=True)
+        tb.Label(rail, text="LOCAL WORKSPACE", style="Eyebrow.TLabel").pack(anchor="w")
+        tb.Label(rail, text=str(PROJECTS_ROOT), style="Path.TLabel", wraplength=220, justify="left").pack(
+            anchor="w", pady=(7, 0)
+        )
 
-        body = tb.Frame(self)
-        body.grid(row=2, column=0, sticky="nsew")
-        body.columnconfigure(0, weight=0, minsize=260)
-        body.columnconfigure(1, weight=1)
+        body = tb.Frame(self, padding=(44, 34), style="App.TFrame")
+        body.grid(row=0, column=1, sticky="nsew")
+        body.columnconfigure(0, weight=1)
         body.rowconfigure(0, weight=1)
 
-        left = tb.Frame(body)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 20))
-        tb.Button(left, text="➕  Start New Project", bootstyle="success", command=self._start_new).pack(fill="x", ipady=10)
-        tb.Button(left, text="🔄  Refresh List", bootstyle="secondary-outline", command=self.refresh).pack(
-            fill="x", ipady=6, pady=(10, 0)
-        )
-        tb.Label(
-            left, text=f"Projects are stored in:\n{PROJECTS_ROOT}", bootstyle=SECONDARY, wraplength=240, justify="left",
-        ).pack(fill="x", pady=(20, 0))
-
-        right = tb.Labelframe(body, text="Existing Projects", padding=10)
-        right.grid(row=0, column=1, sticky="nsew")
-        right.rowconfigure(0, weight=1)
+        right = tb.Frame(body, style="App.TFrame")
+        right.grid(row=0, column=0, sticky="nsew")
+        right.rowconfigure(2, weight=1)
         right.columnconfigure(0, weight=1)
 
+        header = tb.Frame(right, style="App.TFrame")
+        header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 24))
+        tb.Label(header, text="Your projects", style="Hero.TLabel").pack(side="left")
+        RoundedButton(header, "Refresh", self.refresh, width=88, canvas_bg=COLORS["bg"]).pack(side="right")
+        self.project_summary = tb.Label(right, text="Continue where you left off", style="Muted.TLabel")
+        self.project_summary.grid(
+            row=1, column=0, sticky="w", pady=(0, 12)
+        )
+
         columns = ("name", "created", "updated")
-        self.tree = tb.Treeview(right, columns=columns, show="headings", bootstyle="dark")
-        self.tree.heading("name", text="Project Name")
-        self.tree.heading("created", text="Created")
-        self.tree.heading("updated", text="Last Updated")
-        self.tree.column("name", width=220)
-        self.tree.column("created", width=160)
-        self.tree.column("updated", width=160)
-        self.tree.grid(row=0, column=0, sticky="nsew")
+        self.tree = tb.Treeview(right, columns=columns, show="headings", style="Projects.Treeview")
+        self.tree.heading("name", text="    Project", anchor="w")
+        self.tree.heading("created", text="Created", anchor="w")
+        self.tree.heading("updated", text="Last edited", anchor="w")
+        self.tree.column("name", width=280, minwidth=160, anchor="w")
+        self.tree.column("created", width=200, minwidth=170, anchor="w", stretch=False)
+        self.tree.column("updated", width=200, minwidth=170, anchor="w", stretch=False)
+        self.tree.grid(row=2, column=0, sticky="nsew")
         self.tree.bind("<Double-1>", lambda e: self._open_selected())
+        self.tree.bind("<Return>", lambda e: self._open_selected())
+        self.tree.tag_configure("even", background=COLORS["bg"])
+        self.tree.tag_configure("odd", background="#1e1e1e")
 
         scroll = tb.Scrollbar(right, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scroll.set)
-        scroll.grid(row=0, column=1, sticky="ns")
+        def update_scroll(first, last):
+            scroll.set(first, last)
+            if float(first) <= 0 and float(last) >= 1:
+                scroll.grid_remove()
+            else:
+                scroll.grid(row=2, column=1, sticky="ns")
+        self.tree.configure(yscrollcommand=update_scroll)
 
-        btn_row = tb.Frame(right)
-        btn_row.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
-        tb.Button(btn_row, text="Open Project", bootstyle="success-outline", command=self._open_selected).pack(side="left")
-        tb.Button(btn_row, text="Delete Project", bootstyle="danger-outline", command=self._delete_selected).pack(
-            side="left", padx=(8, 0)
+        btn_row = tb.Frame(right, style="App.TFrame")
+        btn_row.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(16, 0))
+        RoundedButton(btn_row, "Open project", self._open_selected, kind="primary", width=126,
+                      canvas_bg=COLORS["bg"]).pack(side="left")
+        RoundedButton(btn_row, "Delete", self._delete_selected, kind="danger", width=82,
+                      canvas_bg=COLORS["bg"]).pack(
+            side="left", padx=(10, 0)
         )
 
         self._rows = {}
         self.refresh()
 
     def refresh(self):
+        selected = self.tree.selection()
         self.tree.delete(*self.tree.get_children())
         self._rows = {}
-        for proj in self.app.pm.list_projects():
+        projects = self.app.pm.list_projects()
+        self.project_summary.configure(text=(f"{len(projects)} projects  ·  Your local workspace" if projects
+                                             else "Your first project starts here. Choose + New project to begin."))
+        for index, proj in enumerate(projects):
             iid = str(proj["id"])
-            self.tree.insert("", "end", iid=iid, values=(proj["name"], proj["created_at"], proj["updated_at"]))
+            self.tree.insert("", "end", iid=iid, values=("    " + proj["name"],
+                             display_project_date(proj["created_at"]), display_project_date(proj["updated_at"])),
+                             tags=("even" if index % 2 == 0 else "odd",))
             self._rows[iid] = proj
+        if selected and selected[0] in self._rows:
+            self.tree.selection_set(selected[0])
 
     def _selected_project(self):
         sel = self.tree.selection()
@@ -805,7 +1001,9 @@ class LauncherFrame(tb.Frame):
         return self._rows.get(sel[0])
 
     def _start_new(self):
-        name = tb.Querybox.get_string(prompt="Project name:", title="Start New Project", parent=self)
+        dialog = ProjectNameDialog(self)
+        self.wait_window(dialog)
+        name = dialog.result
         if not name:
             return
         try:
@@ -873,45 +1071,56 @@ class WorkspaceFrame(tb.Frame):
     # UI construction
     # ------------------------------------------------------------------ #
     def _build_ui(self):
-        topbar = tb.Frame(self, padding=(10, 8))
+        topbar = tb.Frame(self, padding=(20, 12), style="Topbar.TFrame")
         topbar.pack(fill="x", side="top")
         self.project_title_var = tk.StringVar(value="No project open")
-        tb.Label(topbar, textvariable=self.project_title_var, font=("Segoe UI", 13, "bold"), bootstyle=INFO).pack(side="left")
-        tb.Button(topbar, text="💾 Save Project", bootstyle="success-outline", command=self.save_project).pack(side="right", padx=(6, 0))
-        tb.Button(topbar, text="📂 Switch Project", bootstyle="secondary-outline", command=self._switch_project).pack(side="right")
-        tb.Button(topbar, text="📁 Open Project Folder", bootstyle="secondary-outline", command=self._open_project_folder).pack(
+        tb.Label(topbar, text="Certificate Studio", style="EyebrowTop.TLabel").pack(side="left")
+        tb.Label(topbar, text="   /   ", style="MutedTop.TLabel").pack(side="left")
+        tb.Label(topbar, textvariable=self.project_title_var, style="ProjectTitle.TLabel").pack(side="left")
+        RoundedButton(topbar, "Save", self.save_project, kind="primary", width=76,
+                      canvas_bg=COLORS["surface"]).pack(side="right", padx=(8, 0))
+        RoundedButton(topbar, "All projects", self._switch_project, width=104,
+                      canvas_bg=COLORS["surface"]).pack(side="right")
+        RoundedButton(topbar, "Open folder", self._open_project_folder, width=104,
+                      canvas_bg=COLORS["surface"]).pack(
             side="right", padx=(0, 6)
         )
         tb.Separator(self, orient="horizontal").pack(fill="x", side="top")
 
-        body = tb.Frame(self, padding=8)
+        body = tb.Frame(self, padding=0, style="App.TFrame")
         body.pack(fill="both", expand=True)
-        body.columnconfigure(0, weight=0, minsize=440)
+        body.columnconfigure(0, weight=0, minsize=420)
         body.columnconfigure(1, weight=1)
         body.rowconfigure(0, weight=1)
 
-        left_container = tb.Frame(body)
-        left_container.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        scroller = ScrollableFrame(left_container)
-        scroller.pack(fill="both", expand=True)
-        panel = scroller.inner
+        left_container = tb.Frame(body, padding=(18, 18, 10, 18), style="Sidebar.TFrame")
+        left_container.grid(row=0, column=0, sticky="nsew")
+        tb.Label(left_container, text="Project editor", style="Section.TLabel").pack(anchor="w", pady=(0, 6))
+        tb.Label(left_container, text="Set up, personalize, then export.",
+                 style="MutedSidebar.TLabel").pack(anchor="w", pady=(0, 18))
+        self.editor_tabs = tb.Notebook(left_container, style="Editor.TNotebook")
+        self.editor_tabs.pack(fill="both", expand=True)
+        panels = {}
+        for title in ("Setup", "Design", "Export"):
+            scroller = ScrollableFrame(self.editor_tabs)
+            self.editor_tabs.add(scroller, text=title, padding=0)
+            panels[title] = scroller.inner
+        self._build_files_section(panels["Setup"])
+        self._build_columns_section(panels["Setup"])
+        self._build_variables_section(panels["Design"])
+        self._build_textboxes_section(panels["Design"])
+        self._build_metadata_section(panels["Export"])
+        self._build_output_section(panels["Export"])
+        self._build_actions_section(left_container)
 
-        self._build_files_section(panel)
-        self._build_columns_section(panel)
-        self._build_variables_section(panel)
-        self._build_textboxes_section(panel)
-        self._build_metadata_section(panel)
-        self._build_output_section(panel)
-        self._build_actions_section(panel)
-
-        right = tb.Frame(body)
+        right = tb.Frame(body, padding=(16, 16, 18, 14), style="App.TFrame")
         right.grid(row=0, column=1, sticky="nsew")
         right.rowconfigure(0, weight=1)
         right.rowconfigure(1, weight=0)
         right.rowconfigure(2, weight=0)
         right.columnconfigure(0, weight=1)
 
-        preview_frame = tb.Labelframe(right, text="Live Preview", padding=4)
+        preview_frame = tb.Frame(right, padding=0, style="App.TFrame")
         preview_frame.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
         preview_frame.rowconfigure(0, weight=1)
         preview_frame.columnconfigure(0, weight=1)
@@ -923,25 +1132,26 @@ class WorkspaceFrame(tb.Frame):
         )
         self.canvas_preview.grid(row=0, column=0, sticky="nsew")
 
-        progress_frame = tb.Frame(right)
+        progress_frame = tb.Frame(right, style="App.TFrame")
         progress_frame.grid(row=1, column=0, sticky="ew", pady=(0, 6))
         progress_frame.columnconfigure(0, weight=1)
-        self.progress_bar = tb.Progressbar(progress_frame, mode="determinate", bootstyle="success-striped")
+        self.progress_bar = tb.Progressbar(progress_frame, mode="determinate", style="Accent.Horizontal.TProgressbar")
         self.progress_bar.grid(row=0, column=0, sticky="ew", padx=(0, 10))
         self.status_var = tk.StringVar(value="Open or create a project to begin.")
-        tb.Label(progress_frame, textvariable=self.status_var, bootstyle=INFO).grid(row=0, column=1, sticky="e")
+        tb.Label(progress_frame, textvariable=self.status_var, style="Muted.TLabel").grid(row=0, column=1, sticky="e")
 
-        self.log_collapsible = Collapsible(right, "Technical Log (for troubleshooting)", collapsed=True)
+        self.log_collapsible = Collapsible(right, "Activity", collapsed=True)
         self.log_collapsible.grid(row=2, column=0, sticky="ew")
         self.log_text = tb.ScrolledText(self.log_collapsible.body, height=6, autohide=True)
         self.log_text.pack(fill="both", expand=True)
-        self.log_text.text.configure(state="disabled", font=("Consolas", 9))
+        self.log_text.text.configure(state="disabled", font=(UI_FONT, 9), bg=COLORS["bg"],
+                                     fg=COLORS["muted"], relief="flat", borderwidth=0)
 
     # -- Files section ---------------------------------------------------
     def _build_files_section(self, panel):
-        box = tb.Labelframe(panel, text="1. Files", padding=10)
+        box = tb.Labelframe(panel, text="FILES", padding=12)
         box.pack(fill="x", pady=(0, 10))
-        box.columnconfigure(1, weight=1)
+        box.columnconfigure(0, weight=1)
 
         self.template_path_var = tk.StringVar()
         self.font_path_var = tk.StringVar()
@@ -959,7 +1169,7 @@ class WorkspaceFrame(tb.Frame):
         tb.Label(parent, text=label).grid(row=row * 2, column=0, columnspan=2, sticky="w", pady=(6, 0))
         entry = tb.Entry(parent, textvariable=var, state="readonly")
         entry.grid(row=row * 2 + 1, column=0, sticky="ew", padx=(0, 6), pady=(0, 2))
-        tb.Button(parent, text="Browse…", bootstyle="secondary-outline", command=command).grid(
+        RoundedButton(parent, text="Browse…", command=command).grid(
             row=row * 2 + 1, column=1, sticky="e", pady=(0, 2)
         )
 
@@ -1024,7 +1234,7 @@ class WorkspaceFrame(tb.Frame):
 
     # -- Columns section ---------------------------------------------------
     def _build_columns_section(self, panel):
-        box = tb.Labelframe(panel, text="2. Excel Sheet & Columns", padding=10)
+        box = tb.Labelframe(panel, text="DATA COLUMNS", padding=12)
         box.pack(fill="x", pady=(0, 10))
         box.columnconfigure(1, weight=1)
 
@@ -1139,13 +1349,16 @@ class WorkspaceFrame(tb.Frame):
 
     # -- Variables reference ---------------------------------------------------
     def _build_variables_section(self, panel):
-        box = tb.Labelframe(panel, text="3. Available Variables", padding=10)
+        box = tb.Labelframe(panel, text="VARIABLES", padding=12)
         box.pack(fill="x", pady=(0, 10))
         box.columnconfigure(0, weight=1)
-        self.variables_text = tk.Text(box, height=5, wrap="word", bg="#2b2b2b", fg="#dddddd", relief="flat")
+        self.variables_text = tk.Text(
+            box, height=5, wrap="word", bg=COLORS["surface_2"], fg=COLORS["text"],
+            insertbackground=COLORS["text"], relief="flat", padx=8, pady=8,
+        )
         self.variables_text.grid(row=0, column=0, sticky="ew")
         self.variables_text.configure(state="disabled")
-        tb.Button(box, text="🎲 Preview a random row", bootstyle="secondary-outline", command=self._randomize_sample_row).grid(
+        RoundedButton(box, text="Shuffle preview", command=self._randomize_sample_row).grid(
             row=1, column=0, sticky="ew", pady=(6, 0)
         )
 
@@ -1216,13 +1429,17 @@ class WorkspaceFrame(tb.Frame):
 
     # -- Text boxes section ---------------------------------------------------
     def _build_textboxes_section(self, panel):
-        box = tb.Labelframe(panel, text="4. Text Boxes", padding=10)
+        box = tb.Labelframe(panel, text="TEXT LAYERS", padding=12)
         box.pack(fill="x", pady=(0, 10))
         box.columnconfigure(0, weight=1)
 
         list_row = tb.Frame(box)
         list_row.grid(row=0, column=0, sticky="ew")
-        self.box_listbox = tk.Listbox(list_row, height=5, exportselection=False, bg="#2b2b2b", fg="#dddddd")
+        self.box_listbox = tk.Listbox(
+            list_row, height=5, exportselection=False, bg=COLORS["surface_2"], fg=COLORS["text"],
+            selectbackground=COLORS["selection"], selectforeground=COLORS["text"], highlightthickness=1,
+            highlightbackground=COLORS["border"], relief="flat", borderwidth=0,
+        )
         self.box_listbox.pack(side="left", fill="both", expand=True)
         self.box_listbox.bind("<<ListboxSelect>>", lambda e: self._on_listbox_select())
         list_scroll = tb.Scrollbar(list_row, orient="vertical", command=self.box_listbox.yview)
@@ -1231,9 +1448,9 @@ class WorkspaceFrame(tb.Frame):
 
         btn_row = tb.Frame(box)
         btn_row.grid(row=1, column=0, sticky="ew", pady=(6, 0))
-        tb.Button(btn_row, text="➕ Add", bootstyle="success-outline", command=self._add_text_box).pack(side="left")
-        tb.Button(btn_row, text="⧉ Duplicate", bootstyle="secondary-outline", command=self._duplicate_text_box).pack(side="left", padx=(6, 0))
-        tb.Button(btn_row, text="🗑 Delete", bootstyle="danger-outline", command=self._delete_text_box).pack(side="left", padx=(6, 0))
+        RoundedButton(btn_row, text="+ Add", command=self._add_text_box).pack(side="left")
+        RoundedButton(btn_row, text="Duplicate", command=self._duplicate_text_box).pack(side="left", padx=(6, 0))
+        RoundedButton(btn_row, text="Delete", kind="danger", command=self._delete_text_box).pack(side="left", padx=(6, 0))
 
         editor = tb.Labelframe(box, text="Selected Box", padding=8)
         editor.grid(row=2, column=0, sticky="ew", pady=(10, 0))
@@ -1308,7 +1525,7 @@ class WorkspaceFrame(tb.Frame):
         tb.Label(color_row, text="Color").pack(side="left")
         self.box_color_swatch = tk.Canvas(color_row, width=22, height=18, highlightthickness=1, highlightbackground="#888")
         self.box_color_swatch.pack(side="left", padx=(4, 4))
-        tb.Button(color_row, text="Choose…", bootstyle="secondary-outline", command=self._pick_box_color).pack(side="left")
+        RoundedButton(color_row, text="Choose…", command=self._pick_box_color).pack(side="left")
         r += 1
 
         font_override_row = tb.Frame(editor)
@@ -1317,8 +1534,8 @@ class WorkspaceFrame(tb.Frame):
         tb.Entry(font_override_row, textvariable=self.box_font_override_var, state="readonly", width=16).pack(
             side="left", padx=(4, 4), fill="x", expand=True
         )
-        tb.Button(font_override_row, text="Browse…", bootstyle="secondary-outline", command=self._pick_box_font).pack(side="left")
-        tb.Button(font_override_row, text="Clear", bootstyle="secondary-outline", command=self._clear_box_font).pack(side="left", padx=(4, 0))
+        RoundedButton(font_override_row, text="Browse…", command=self._pick_box_font).pack(side="left")
+        RoundedButton(font_override_row, text="Clear", command=self._clear_box_font).pack(side="left", padx=(4, 0))
 
         self._set_editor_enabled(False)
 
@@ -1540,12 +1757,14 @@ class WorkspaceFrame(tb.Frame):
         self.save_project(silent=True)
 
     def _on_canvas_new_box(self, left, top, width, height):
+        self.editor_tabs.select(1)
         self._add_text_box(left, top, width, height)
 
     def _on_canvas_select(self, box_id):
         self.selected_box_id = box_id
         box = self._get_selected_box()
         if box:
+            self.editor_tabs.select(1)
             self._load_box_into_editor(box)
             self._refresh_box_listbox()
 
@@ -1561,7 +1780,7 @@ class WorkspaceFrame(tb.Frame):
 
     # -- Metadata section ---------------------------------------------------
     def _build_metadata_section(self, panel):
-        box = tb.Labelframe(panel, text="5. PDF Metadata", padding=10)
+        box = tb.Labelframe(panel, text="PDF METADATA", padding=12)
         box.pack(fill="x", pady=(0, 10))
         box.columnconfigure(1, weight=1)
 
@@ -1588,7 +1807,7 @@ class WorkspaceFrame(tb.Frame):
         custom_row = tb.Frame(box)
         custom_row.grid(row=r, column=0, columnspan=2, sticky="ew")
         custom_row.columnconfigure(0, weight=1)
-        self.custom_meta_tree = tb.Treeview(custom_row, columns=("key", "value"), show="headings", height=4, bootstyle="dark")
+        self.custom_meta_tree = tb.Treeview(custom_row, columns=("key", "value"), show="headings", height=4, style="Editor.Treeview")
         self.custom_meta_tree.heading("key", text="Key")
         self.custom_meta_tree.heading("value", text="Value template")
         self.custom_meta_tree.column("key", width=100)
@@ -1608,8 +1827,8 @@ class WorkspaceFrame(tb.Frame):
         self._make_variable_inserter(add_row, val_entry).grid(row=0, column=2)
         btns = tb.Frame(box)
         btns.grid(row=r + 1, column=0, columnspan=2, sticky="ew", pady=(4, 0))
-        tb.Button(btns, text="➕ Add / Update", bootstyle="success-outline", command=self._add_custom_meta).pack(side="left")
-        tb.Button(btns, text="🗑 Remove", bootstyle="danger-outline", command=self._remove_custom_meta).pack(side="left", padx=(6, 0))
+        RoundedButton(btns, text="Add / update", command=self._add_custom_meta).pack(side="left")
+        RoundedButton(btns, text="Remove", kind="danger", command=self._remove_custom_meta).pack(side="left", padx=(6, 0))
 
         tb.Label(box, text="PDF resolution (DPI)").grid(row=r + 2, column=0, sticky="w", pady=(8, 0))
         self.pdf_resolution_var = tk.IntVar(value=100)
@@ -1668,12 +1887,12 @@ class WorkspaceFrame(tb.Frame):
 
     # -- Output section ---------------------------------------------------
     def _build_output_section(self, panel):
-        box = tb.Labelframe(panel, text="6. Output Folder", padding=10)
+        box = tb.Labelframe(panel, text="OUTPUT", padding=12)
         box.pack(fill="x", pady=(0, 10))
         box.columnconfigure(0, weight=1)
         self.output_path_var = tk.StringVar()
         tb.Entry(box, textvariable=self.output_path_var, state="readonly").grid(row=0, column=0, sticky="ew", padx=(0, 6))
-        tb.Button(box, text="Open Folder", bootstyle="secondary-outline", command=lambda: open_in_file_manager(self.output_path_var.get())).grid(
+        RoundedButton(box, text="Open Folder", command=lambda: open_in_file_manager(self.output_path_var.get())).grid(
             row=0, column=1
         )
         tb.Label(box, text="Certificates always save inside this project's own 'output' folder.", bootstyle=SECONDARY).grid(
@@ -1686,12 +1905,15 @@ class WorkspaceFrame(tb.Frame):
         box.pack(fill="x", pady=(0, 20))
         box.columnconfigure(0, weight=1)
 
-        tb.Button(box, text="Save one test certificate", bootstyle="info-outline", command=self._generate_test_certificate).pack(
+        RoundedButton(box, text="Save one test certificate", command=self._generate_test_certificate).pack(
             fill="x", pady=(0, 8)
         )
-        self.generate_btn = tb.Button(box, text="▶  Generate All Certificates", bootstyle="success", command=self._start_generation)
-        self.generate_btn.pack(fill="x", ipady=6)
-        self.cancel_btn = tb.Button(box, text="Cancel", bootstyle="danger-outline", command=self._cancel_generation, state="disabled")
+        self.generate_btn = RoundedButton(
+            box, "Generate all certificates", self._start_generation, kind="primary",
+            width=390, height=44, canvas_bg=COLORS["sidebar"],
+        )
+        self.generate_btn.pack(fill="x")
+        self.cancel_btn = RoundedButton(box, text="Cancel", kind="danger", command=self._cancel_generation, state="disabled")
         self.cancel_btn.pack(fill="x", pady=(8, 0))
 
     # ------------------------------------------------------------------ #
@@ -1712,6 +1934,7 @@ class WorkspaceFrame(tb.Frame):
         return True
 
     def load_project(self, project):
+        self.editor_tabs.select(0)
         self.project = project
         self.info = self.pm.load_info(project["folder"])
         self.workbook = None
@@ -1721,7 +1944,7 @@ class WorkspaceFrame(tb.Frame):
         self._sample_row_cache = None
         self._sample_variables = {}
 
-        self.project_title_var.set(f"Project: {project['name']}")
+        self.project_title_var.set(project['name'])
         self.output_path_var.set(str(self._project_dir() / "output"))
         (self._project_dir() / "output").mkdir(parents=True, exist_ok=True)
 
@@ -2071,9 +2294,20 @@ class WorkspaceFrame(tb.Frame):
 
 class CertificateStudioApp(tb.Window):
     def __init__(self):
-        super().__init__(themename="darkly", title="Certificate Generator Studio")
+        super().__init__(themename="darkly", title="Certificate Studio", iconphoto=None)
         self.geometry("1440x900")
         self.minsize(1100, 700)
+
+        # Keep PhotoImages alive for Tk on macOS/Linux. Windows uses its native
+        # multi-resolution ICO path for both this window and future dialogs.
+        self._app_icons = [ImageTk.PhotoImage(studio_mark(size)) for size in (16, 32, 48, 64)]
+        self.iconphoto(True, *self._app_icons)
+        if platform.system() == "Windows":
+            icon_path = str(APP_DIR / "assets" / "studio.ico")
+            self.iconbitmap(default=icon_path)
+            self.iconbitmap(icon_path)
+
+        self._configure_visual_system()
 
         self.pm = ProjectManager()
 
@@ -2089,6 +2323,101 @@ class CertificateStudioApp(tb.Window):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.show_launcher()
+        self.after(80, self._style_native_window)
+
+    def _style_native_window(self):
+        """Ask Windows 11 to use dark chrome and rounded native window corners."""
+        if platform.system() != "Windows":
+            return
+        try:
+            import ctypes
+
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            dwm = ctypes.windll.dwmapi.DwmSetWindowAttribute
+            dark = ctypes.c_int(1)
+            corner = ctypes.c_int(2)  # DWMWCP_ROUND
+            caption = ctypes.c_int(0x00191919)  # COLORREF is BGR
+            border = ctypes.c_int(0x00383838)
+            text = ctypes.c_int(0x00F1F1F1)
+            dwm(hwnd, 20, ctypes.byref(dark), ctypes.sizeof(dark))
+            dwm(hwnd, 33, ctypes.byref(corner), ctypes.sizeof(corner))
+            dwm(hwnd, 34, ctypes.byref(border), ctypes.sizeof(border))
+            dwm(hwnd, 35, ctypes.byref(caption), ctypes.sizeof(caption))
+            dwm(hwnd, 36, ctypes.byref(text), ctypes.sizeof(text))
+        except Exception:
+            pass
+
+    def _configure_visual_system(self):
+        """Apply the visual language before constructing the application views."""
+        global UI_FONT, DISPLAY_FONT
+        self.configure(bg=COLORS["bg"])
+        s = self.style
+        available = set(tkfont.families(self))
+        font = next((name for name in ("Inter", "Aptos", "Segoe UI Variable Text", "Segoe UI", "Helvetica")
+                     if name in available), "TkDefaultFont")
+        display_font = next((name for name in ("Inter Display", "Inter", "Aptos Display", "Segoe UI Variable Display")
+                             if name in available), font)
+        UI_FONT, DISPLAY_FONT = font, display_font
+        for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont"):
+            tkfont.nametofont(name).configure(family=font, size=10)
+        self.option_add("*Font", (font, 10))
+        s.configure(".", font=(font, 10), background=COLORS["bg"], foreground=COLORS["text"])
+        s.configure("App.TFrame", background=COLORS["bg"])
+        s.configure("Sidebar.TFrame", background=COLORS["sidebar"])
+        s.configure("Surface.TFrame", background=COLORS["surface"])
+        s.configure("Topbar.TFrame", background=COLORS["surface"])
+        s.configure("TFrame", background=COLORS["sidebar"])
+        s.configure("TLabel", background=COLORS["sidebar"], foreground=COLORS["text"], font=(font, 10))
+        s.configure("TButton", font=(font, 10))
+        s.configure("Editor.TNotebook", background=COLORS["sidebar"], borderwidth=0, tabmargins=(0, 0, 0, 14))
+        s.configure("Editor.TNotebook.Tab", background=COLORS["sidebar"], foreground=COLORS["muted"],
+                    padding=(20, 10), font=(font, 10), borderwidth=0)
+        s.map("Editor.TNotebook.Tab", background=[("selected", COLORS["surface_hover"]), ("active", COLORS["surface"])],
+              foreground=[("selected", COLORS["text"]), ("active", COLORS["text"])])
+        s.configure("Editor.Treeview", background=COLORS["surface"], fieldbackground=COLORS["surface"],
+                    foreground=COLORS["text"], rowheight=34, borderwidth=0, font=(font, 10))
+        s.configure("Editor.Treeview.Heading", background=COLORS["sidebar"], foreground=COLORS["muted"],
+                    font=(font, 9), padding=8, relief="flat")
+        s.map("Editor.Treeview", background=[("selected", COLORS["selection"])], foreground=[("selected", COLORS["text"])])
+        s.configure("Hero.TLabel", background=COLORS["bg"], foreground=COLORS["text"], font=(display_font, 27, "bold"))
+        s.configure("Brand.TLabel", background=COLORS["sidebar"], foreground=COLORS["text"], font=(display_font, 13, "bold"))
+        s.configure("Section.TLabel", background=COLORS["sidebar"], foreground=COLORS["text"], font=(display_font, 14, "bold"))
+        s.configure("Eyebrow.TLabel", background=COLORS["sidebar"], foreground=COLORS["muted"], font=(font, 8, "bold"))
+        s.configure("EyebrowTop.TLabel", background=COLORS["surface"], foreground=COLORS["muted"], font=(font, 10, "bold"))
+        s.configure("ProjectTitle.TLabel", background=COLORS["surface"], foreground=COLORS["text"], font=(font, 11, "bold"))
+        s.configure("Muted.TLabel", background=COLORS["bg"], foreground=COLORS["muted"])
+        s.configure("MutedSidebar.TLabel", background=COLORS["sidebar"], foreground=COLORS["muted"])
+        s.configure("MutedTop.TLabel", background=COLORS["surface"], foreground=COLORS["muted"])
+        s.configure("ToolbarMuted.TLabel", background=COLORS["surface"], foreground=COLORS["muted"])
+        s.configure("Path.TLabel", background=COLORS["sidebar"], foreground="#6f6d68", font=("Consolas", 8))
+        s.configure("Accent.TButton", background=COLORS["accent"], foreground="#171717", borderwidth=0, padding=(15, 8), font=(font, 10, "bold"))
+        s.map(
+            "Accent.TButton",
+            background=[("active", COLORS["accent_hover"]), ("disabled", "#555555")],
+            foreground=[("disabled", "#909090")],
+        )
+        s.configure("Quiet.TButton", background=COLORS["surface"], foreground=COLORS["muted"], borderwidth=0, padding=(12, 7))
+        s.map("Quiet.TButton", background=[("active", COLORS["surface_hover"])], foreground=[("active", COLORS["text"])])
+        s.configure("TLabelframe", background=COLORS["sidebar"], bordercolor=COLORS["sidebar"], relief="flat", borderwidth=0)
+        s.configure("TLabelframe.Label", background=COLORS["sidebar"], foreground=COLORS["muted"], font=(font, 8, "bold"))
+        s.configure("Card.TLabelframe", background=COLORS["surface"], bordercolor=COLORS["border"], relief="solid")
+        s.configure("Card.TLabelframe.Label", background=COLORS["bg"], foreground=COLORS["muted"], font=(font, 9, "bold"))
+        s.configure("TEntry", fieldbackground=COLORS["surface_2"], foreground=COLORS["text"], bordercolor=COLORS["border"], insertcolor=COLORS["text"], padding=7)
+        s.configure("TCombobox", fieldbackground=COLORS["surface_2"], foreground=COLORS["text"], bordercolor=COLORS["border"], padding=6)
+        for control in ("TEntry", "TCombobox", "TSpinbox"):
+            s.configure(control, font=(font, 10), fieldbackground=COLORS["surface_2"],
+                        foreground=COLORS["text"], bordercolor=COLORS["border"], lightcolor=COLORS["border"],
+                        darkcolor=COLORS["border"], insertcolor=COLORS["text"])
+            s.map(control, bordercolor=[("focus", "#777777"), ("!focus", COLORS["border"])],
+                  fieldbackground=[("readonly", COLORS["surface_2"]), ("disabled", COLORS["sidebar"])],
+                  foreground=[("disabled", COLORS["muted"]), ("readonly", COLORS["text"])])
+        s.configure("Projects.Treeview", background=COLORS["bg"], fieldbackground=COLORS["bg"], foreground=COLORS["text"],
+                    font=(font, 11), rowheight=62, borderwidth=0, relief="flat")
+        s.configure("Projects.Treeview.Heading", background=COLORS["bg"], foreground=COLORS["muted"], relief="flat",
+                    borderwidth=0, padding=(0, 14), font=(font, 9))
+        s.map("Projects.Treeview.Heading", background=[("active", COLORS["bg"])], relief=[("active", "flat")])
+        s.map("Projects.Treeview", background=[("selected", COLORS["selection"])], foreground=[("selected", COLORS["text"])])
+        s.configure("Accent.Horizontal.TProgressbar", troughcolor=COLORS["surface_2"], background=COLORS["accent"], borderwidth=0)
 
     def show_launcher(self):
         self.launcher.refresh()
