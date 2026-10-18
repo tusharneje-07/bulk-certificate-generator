@@ -514,14 +514,20 @@ class ProjectNameDialog(tk.Toplevel):
         self.entry.pack(fill="x", ipady=9)
         actions = tk.Frame(shell, bg=COLORS["surface"])
         actions.pack(fill="x", pady=(22, 0))
-        RoundedButton(actions, "Create project", self._submit, kind="primary", width=132).pack(side="right")
-        RoundedButton(actions, "Cancel", self.destroy, width=84).pack(side="right", padx=(0, 9))
+        button_height = max(38, tkfont.Font(font=(UI_FONT, 10)).metrics("linespace") + 20)
+        RoundedButton(actions, "Create project", self._submit, kind="primary", height=button_height).pack(side="right")
+        RoundedButton(actions, "Cancel", self.destroy, height=button_height).pack(side="right", padx=(0, 9))
         self.entry.bind("<Return>", lambda _e: self._submit())
         self.bind("<Escape>", lambda _e: self.destroy())
         self.update_idletasks()
-        x = parent.winfo_toplevel().winfo_rootx() + (parent.winfo_toplevel().winfo_width() - self.winfo_width()) // 2
-        y = parent.winfo_toplevel().winfo_rooty() + (parent.winfo_toplevel().winfo_height() - self.winfo_height()) // 2
-        self.geometry(f"360x210+{x}+{y}")
+        # Use the layout's requested size so platform fonts and DPI scaling
+        # cannot push the action buttons outside a fixed-height dialog.
+        width = max(360, self.winfo_reqwidth())
+        height = self.winfo_reqheight()
+        owner = parent.winfo_toplevel()
+        x = owner.winfo_rootx() + (owner.winfo_width() - width) // 2
+        y = owner.winfo_rooty() + (owner.winfo_height() - height) // 2
+        self.geometry(f"{width}x{height}+{x}+{y}")
         # X11/Wayland cannot grab a window until the window manager has
         # mapped it. Windows usually tolerates an earlier grab, which hid
         # this ordering bug during development.
