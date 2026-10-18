@@ -33,6 +33,10 @@ with tempfile.TemporaryDirectory() as directory:
             for widget in shell.winfo_children():
                 assert widget.winfo_viewable()
                 assert widget.winfo_rooty() + widget.winfo_height() <= dialog.winfo_rooty() + dialog.winfo_height()
+                for button in widget.winfo_children():
+                    if isinstance(button, main.RoundedButton):
+                        assert button.winfo_height() >= button.winfo_reqheight(), (
+                            scale, button._text, button.winfo_height(), button.winfo_reqheight())
             dialog.entry.insert(0, "Regression check")
             dialog._submit()
             assert dialog.result == "Regression check"
@@ -53,6 +57,23 @@ with tempfile.TemporaryDirectory() as directory:
             assert len(attempts) == 3
             dialog.destroy()
         print("PASS: recovers from two rejected grabs", flush=True)
+
+        # A font/layout change after construction must not squeeze the buttons.
+        dialog = main.ProjectNameDialog(app.launcher)
+        shell = dialog.winfo_children()[0]
+        for widget in shell.winfo_children():
+            if isinstance(widget, main.tk.Label):
+                widget.configure(font=(main.UI_FONT, 24))
+        pump(app, lambda: app.grab_current() == dialog)
+        app.update()
+        for widget in shell.winfo_children():
+            for button in widget.winfo_children():
+                if isinstance(button, main.RoundedButton):
+                    assert button.winfo_viewable()
+                    assert button.winfo_height() >= button.winfo_reqheight(), (
+                        "late layout change", button.winfo_height(), button.winfo_reqheight())
+        dialog.destroy()
+        print("PASS: late font/layout changes preserve button height", flush=True)
 
         dialog = main.ProjectNameDialog(app.launcher)
         dialog.withdraw()
