@@ -522,17 +522,14 @@ class ProjectNameDialog(tk.Toplevel):
         self.entry.bind("<Return>", lambda _e: self._submit())
         self.bind("<Escape>", lambda _e: self.destroy())
         self.update_idletasks()
-        # Keep geometry content-driven, including layout requests arriving
-        # after mapping (platform fonts, themes, and DPI adjustments).
+        # Use the layout's requested size so platform fonts and DPI scaling
+        # cannot push the action buttons outside a fixed-height dialog.
         width = max(360, self.winfo_reqwidth())
         height = self.winfo_reqheight()
-        self.minsize(width, height)
         owner = parent.winfo_toplevel()
         x = owner.winfo_rootx() + (owner.winfo_width() - width) // 2
         y = owner.winfo_rooty() + (owner.winfo_height() - height) // 2
-        # Setting an explicit WxH here would freeze the initial measurement
-        # and let pack compress the action row when content needs more room.
-        self.geometry(f"{x:+d}{y:+d}")
+        self.geometry(f"{width}x{height}+{x}+{y}")
         # Finish construction before mapping. Let the normal event loop paint
         # the dialog; visibility notifications and grab readiness can differ
         # between window managers, so do not block construction on either.
